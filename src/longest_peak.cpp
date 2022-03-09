@@ -2,22 +2,43 @@
 
 using namespace std;
 
-int longestPeak(vector<int> array)
+const int longestPeak(const vector<int> array)
 {
-    constexpr char INCREASE{'I'}, DECREASE{'D'};
-    char phase = INCREASE;
-    int longestPeak{0};
-    int currentPeak{1};
-    for (size_t idx{1}, size{array.size()}; idx < size; idx++)
+    if (array.size() < 3)
+        return -1;
+
+    int longestPeak = 0;
+    int runningPeak = 0;
+    char direction = 'U'; // U:undefined, I: increasing, D: decreasing
+    for (int idx = 1; idx < array.size(); idx++)
     {
-        if(phase == INCREASE) {
-            if(array[idx] < array[idx-1]) {
-                phase = DECREASE;
+        auto diff = array[idx] - array[idx - 1];
+        diff = diff > 0 ? 1 : diff < 0 ? -1
+                                       : 0;
+        switch (diff)
+        {
+        case 1:
+            if (direction != 'I')
+            {
+                runningPeak = 1;
             }
-            else
-            if(array[idx] == array[idx - 1]){
-                currentPeak = 1;
+            direction = 'I';
+            runningPeak++;
+            break;
+
+        case -1:
+            if (direction == 'I' || direction == 'D')
+            {
+                runningPeak++;
+                longestPeak = runningPeak > longestPeak ? runningPeak : longestPeak;
+                direction = 'D';
             }
+            break;
+
+        case 0:
+            direction = 'U';
+            runningPeak = 0;
+            break;
         }
     }
 
