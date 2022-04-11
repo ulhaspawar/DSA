@@ -6,115 +6,143 @@
 
 using namespace std;
 
-template <class NODE_TYPE>
-class DirectedGraph
+class AirRoutes
 {
-    int size;
-    vector<vector<int>> adjecancyMatrix;
-    unordered_map<NODE_TYPE, int> labelToIdxMap;
-    unordered_map<int, NODE_TYPE> idxToLabel;
+private:
+    vector<vector<bool>> graph;
+    unordered_map<size_t, string> idxToNameMap;
+    unordered_map<string, size_t> nameToIdxMap;
+
+    inline size_t getIdx(const string name) const;
+    inline string getName(const size_t idx) const;
+    vector<size_t> dfs(const size_t start, const size_t exclusion) const;
+    vector<size_t> findUnreachables(const int start) const;
 
 public:
-    DirectedGraph(const vector<NODE_TYPE> &vertices, const vector<vector<NODE_TYPE>> &edges);
-    vector<NODE_TYPE> dfs(NODE_TYPE start);
+    vector<string> getConnections(const string startingAirport) const;
+    AirRoutes(const vector<string> &airports, const vector<vector<string>> &routes);
 };
 
-template <class NODE_TYPE>
-DirectedGraph<NODE_TYPE>::DirectedGraph(const vector<NODE_TYPE> &vertices, const vector<vector<NODE_TYPE>> &edges)
+size_t AirRoutes::getIdx(const string name) const
 {
-    int idx{0};
-    for (const auto v : vertices)
-    {
-        const int n = idx++;
-        labelToIdxMap.insert({v, n});
-        idxToLabel.insert({n, v});
-    }
-
-    size = vertices.size();
-
-    for (idx = 0; idx < size; idx++)
-        adjecancyMatrix.push_back(vector<int>(size, 0));
-
-    for (const auto e : edges)
-        adjecancyMatrix[labelToIdxMap[e[0]]][labelToIdxMap[e[1]]] = 1;
+    return nameToIdxMap.find(name)->second;
 }
 
-template <class NODE_TYPE>
-vector<NODE_TYPE> DirectedGraph<NODE_TYPE>::dfs(NODE_TYPE start)
+string AirRoutes::getName(const size_t idx) const
 {
-    stack<int> unprocessed;
-    unprocessed.push(labelToIdxMap[start]);
-    vector<NODE_TYPE> dfsTraversal;
-    while (!unprocessed.empty())
+    return idxToNameMap.find(idx)->second;
+}
+
+AirRoutes::AirRoutes(const vector<string> &airports, const vector<vector<string>> &routes)
+{
+    const auto numOfAirports{airports.size()};
+    const auto numOfRoutes{routes.size()};
+
+    for (size_t idx{0}; idx < numOfAirports; idx++)
     {
-        const auto vIdx = unprocessed.top();
-        unprocessed.pop();
-        dfsTraversal.push_back(idxToLabel[vIdx]);
-        for (int nIdx{0}; nIdx < size; nIdx++)
-            if (adjecancyMatrix[vIdx][nIdx] == 1 and find(cbegin(dfsTraversal), cend(dfsTraversal), idxToLabel[nIdx]) == cend(dfsTraversal))
-                unprocessed.push(nIdx);
+        idxToNameMap.insert({idx, airports[idx]});
+        nameToIdxMap.insert({airports[idx], idx});
+        graph.push_back(vector(numOfAirports, false));
     }
+
+    for (size_t idx{0}; idx < numOfRoutes; idx++)
+    {
+        const auto source{getIdx(routes[idx][0])};
+        const auto destination{getIdx(routes[idx][1])};
+
+        graph[source][destination] = true;
+    }
+}
+
+vector<size_t> AirRoutes::dfs(const size_t start, const size_t exclusion) const
+{
+    const auto numOfAirports{graph.size()};
+
+    vector<size_t> dfsTraversal;
+    stack<size_t> toBeProcessed;
+    toBeProcessed.push(start);
+
+    while (!toBeProcessed.empty())
+    {
+        const auto current{toBeProcessed.top()};
+        toBeProcessed.pop();
+        if (current != exclusion and current != start)
+            dfsTraversal.push_back(current);
+
+        for (size_t idx{0}; idx < numOfAirports; idx++)
+            if (idx != exclusion and graph[current][idx] and find(cbegin(dfsTraversal), cend(dfsTraversal), idx) == cend(dfsTraversal))
+                toBeProcessed.push(idx);
+    }
+
     return dfsTraversal;
 }
 
-using Map = DirectedGraph<string>;
-
-vector<string> getReachableAirports(string startingAirport, const vector<string> airports, Map map)
+vector<size_t> AirRoutes::findUnreachables(const int start) const
 {
-    return map.dfs(startingAirport);
+    const auto numOfAirports{graph.size()};
+
+    const auto reachables{dfs(start, start)};
+    vector<size_t> unreachables;
+
+    for (size_t idx{0}; idx < numOfAirports; idx++)
+        if (idx != start and find(cbegin(reachables), cend(reachables), idx) == cend(reachables))
+            unreachables.push_back(idx);
+
+    return unreachables;
 }
 
-vector<string> getUnreachableAirports(const string startingAirport, const vector<string> airports, Map map)
+vector<string> AirRoutes::getConnections(const string startingAirport) const
 {
-    vector<string> unreachableAirports;
-    const auto dfs = getReachableAirports(startingAirport, airports, map);
-    for (const auto a : airports)
-        if (find(cbegin(dfs), cend(dfs), a) == cend(dfs))
-            unreachableAirports.push_back(a);
-    return unreachableAirports;
-}
+    const auto start{getIdx(startingAirport)};
+    const auto unreachables{findUnreachables(start)};
+    vector<string> missingRoutes;
 
-vector<vector<string>> getReachableAirports(const vector<string> startingAirports, const vector<string> airports, const Map map)
-{
-    vector<vector<string>> reachables;
+    unordered_map<int, vector<size_t>> unreachablesMap;
+    for (const auto idx : unreachables)
+        unreachablesMap.insert({idx, dfs(idx, start)});
 
-    for (const auto sa : startingAirports)
-        reachables.push_back(getReachableAirports(sa, airports, map));
+    while (!unreachablesMap.empty())
+    {
+        // Find longest unreachable path
+        size_t longestLength{0};
+        size_t bestNewRoute;
+        vector<size_t> newConnections;
+        for (auto const p : unreachablesMap)
+        {
+            if (longestLength <= p.second.size())
+            {
+                longestLength = p.second.size();
+                bestNewRoute = p.first;
+                newConnections = p.second;
+            }
+        }
 
-    return reachables;
-}
+        // Add new route
+        missingRoutes.push_back(getName(bestNewRoute));
+        unreachablesMap.erase(bestNewRoute);
 
-vector<vector<string>> removeAirport(vector<vector<string>> &reachables, const string airportToRemove)
-{
-    vector<vector<string>> remainings;
+        // Remove newly connected airports
+        for (const auto connected : newConnections)
+        {
+            unreachablesMap.erase(connected);
+            for (auto u : unreachablesMap)
+            {
+                auto match = find(begin(u.second), end(u.second), connected);
+                if (match != end(u.second))
+                    u.second.erase(match);
+            }
+        }
+    }
 
-    for (const auto r : reachables)
-        if (find(cbegin(r), cend(r), airportToRemove) == cend(r))
-            remainings.push_back(r);    
-
-    return remainings;
+    return missingRoutes;
 }
 
 int airportConnections(vector<string> airports, vector<vector<string>> routes,
                        string startingAirport)
 {
-    Map map(airports, routes);
-    const auto unreachableAirports = getUnreachableAirports(startingAirport, airports, map);
+    const AirRoutes airRoutes(airports, routes);
 
-    auto unreachableRoutes = getReachableAirports(unreachableAirports, airports, map);
-
-    int newRoutes{0};
-    while (!unreachableRoutes.empty())
-    {
-        sort(begin(unreachableRoutes), end(unreachableRoutes), [](auto v1, auto v2)
-             { return v1.size() > v2.size(); });
-        newRoutes++;
-        const auto newDestination = unreachableRoutes[0][0];
-        for()
-        unreachableRoutes = removeAirport(unreachableRoutes, newDestination);
-    }
-
-    return newRoutes;
+    return airRoutes.getConnections(startingAirport).size();
 }
 
 int main()
@@ -141,7 +169,7 @@ int main()
         {"SFO", "DSM"},
         {"SAN", "EYW"}};
 
-    int n = airportConnections(airports, routes, "LGA");
+    const auto ans = airportConnections(airports, {}, "LGA");
 
     return 0;
 }
